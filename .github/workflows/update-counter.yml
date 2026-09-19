@@ -1,0 +1,46 @@
+name: Update Smiirl counter
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: update-smiirl-counter
+  cancel-in-progress: true
+
+permissions:
+  contents: write # needed to commit+push docs/counter.json
+  actions: write # needed for the cache-delete step below
+
+env:
+  CACHE_KEY: homebrew-clones-cache
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # cache entries are immutable per key; save step below deletes + re-saves.
+      - name: Restore cached clones
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache
+          key: ${{ env.CACHE_KEY }}
+
+      - name: Update counter
+        id: update
+        run: ./update-smiirl-counter.sh
+
+      # only re-save the cache on runs that actually did the heavy git work;
+      # skip runs are just two curl calls and shouldn't pay to re-upload it.
+      - name: Save cached clones
+        if: always() && steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete "$CACHE_KEY" --repo "${{ github.repository }}" || true
+      - uses: actions/cache/save@v4
+        if: always() && steps.update.outputs.changed == 'true'
+        with:
+          path: .cache
+          key: ${{ env.CACHE_KEY }}
